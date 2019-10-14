@@ -76,9 +76,8 @@ impl<'a> std::cmp::PartialEq for {{ struct.name }}Ref<'a> {
     fn eq(&self, other: &Self) -> bool {
         {% for field in struct.fields %}
         {% set name = field.name | escape_rust_keywords %}
-        self.{{ name }}() == other.{{ name }}() &&
+        self.{{ name }}() == other.{{ name }}() {% if not loop.last %}&&{% endif %}
         {% endfor %}
-        true
     }
 }
 

@@ -1,4 +1,5 @@
 {% import "rust/index.jinja2" as index %}
+{% import "rust/variadic.jinja2" as variadic %}
 
 {%- macro declaration(archive) %}
 
@@ -6,14 +7,7 @@
 {% for r in archive.resources | multivector_resources %}
 
 /// Builtin union type of {% for type in r.referenced_structures | structure_references %}{{ type.node.path }}{%- if not loop.last %}, {% endif %}{% endfor %}.
-define_variadic_struct!({{ r.name | snake_to_upper_camel_case }}, Ref{{ r.name | snake_to_upper_camel_case }}, Builder{{ r.name | snake_to_upper_camel_case }},
-    {{ fully_qualified_name(archive, r.index_reference.node) }},
-{% for type in r.referenced_structures | structure_references %}
-    {{ loop.index0 }} => ( {{type.node.name }}, {{ fully_qualified_name(archive, type.node) }}, add_{{ type.node.name | camel_to_snake_case }})
-    {%- if not loop.last %},
-    {% endif %}
-{%- endfor %}
-);
+{{- variadic.declaration(archive, r) }}
 {%- endfor %}
 
 {# archive definition #}
