@@ -32,7 +32,7 @@ impl<'a> crate::Struct<'a> for {{ struct.name }}
 }
 
 {% if struct | has_range %}
-impl crate::NoOverlap for {{struct.name}}Ref {}
+impl crate::NoOverlap for {{struct.name}} {}
 {% endif %}
 
 impl<'a> {{ struct.name }}Ref<'a> {
@@ -42,16 +42,15 @@ impl<'a> {{ struct.name }}Ref<'a> {
         let value = flatdata_read_bytes!({{ field | primitive_type }}, self.data, {{ field.offset }}, {{ field.type.width }});
         unsafe { std::mem::transmute::<{{ field | primitive_type }}, {{ field | field_type }}>(value) }
     }
-    {% endfor %}
 
-    {% for field in struct.fields %}
     {%- if field.range -%}
     #[inline]
-    pub fn {{ field.range | escape_rust_keywords }}(&self) -> std::ops::Range<{{ field.type.name }}> {
+    pub fn {{ field.range | escape_rust_keywords }}(&self) -> std::ops::Range<{{ field | field_type }}> {
         let start = flatdata_read_bytes!({{ field.type.name }}, self.data, {{ field.offset }}, {{ field.type.width }});
         let end = flatdata_read_bytes!({{ field.type.name }}, self.data, {{ field.offset }} + {{ struct.size_in_bytes }} * 8, {{ field.type.width }});
         start..end
     }
+
     {% endif %}
     {% endfor %}
 
