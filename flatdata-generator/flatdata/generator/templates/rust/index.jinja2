@@ -3,7 +3,7 @@
 {# multivector index structs #}
 {{ structure.declaration(index) }}
 
-impl<'a> crate::IndexStruct<'a> for {{index.name}} {
+impl<'a> flatdata::IndexStruct<'a> for {{index.name}} {
     #[inline]
     fn range(data: Self::Item) -> std::ops::Range<usize> {
         let range = data.range();

@@ -8,7 +8,7 @@ pub struct {{struct.name}}Ref<'a> {
     _phantom: std::marker::PhantomData<&'a u8>,
 }
 
-impl<'a> crate::Struct<'a> for {{ struct.name }}
+impl<'a> flatdata::Struct<'a> for {{ struct.name }}
 {
     const SCHEMA: &'static str = schema::structs::{{ struct.name | camel_to_snake_case | upper }};
     const SIZE_IN_BYTES: usize = {{ struct.size_in_bytes }};
@@ -31,8 +31,8 @@ impl<'a> crate::Struct<'a> for {{ struct.name }}
     }
 }
 
-{% if struct | has_range %}
-impl crate::NoOverlap for {{struct.name}} {}
+{% if not struct | has_range %}
+impl flatdata::NoOverlap for {{struct.name}} {}
 {% endif %}
 
 impl<'a> {{ struct.name }}Ref<'a> {
@@ -62,7 +62,7 @@ impl<'a> {{ struct.name }}Ref<'a> {
 
 impl<'a> std::fmt::Debug for {{ struct.name }}Ref<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        fmt.debug_struct("{{ struct.name }}")
+        f.debug_struct("{{ struct.name }}")
             {% for field in struct.fields %}
             {% set name = field.name | escape_rust_keywords %}
             .field("{{ name }}", &self.{{ name }}())
@@ -81,7 +81,7 @@ impl<'a> std::cmp::PartialEq for {{ struct.name }}Ref<'a> {
     }
 }
 
-impl<'a> crate::Ref for {{ struct.name }}Ref<'a> {}
+impl<'a> flatdata::Ref for {{ struct.name }}Ref<'a> {}
 
 pub struct {{ struct.name }}Mut<'a> {
     data: *mut u8,
@@ -111,7 +111,7 @@ impl<'a> {{ struct.name }}Mut<'a> {
     pub fn fill_from(&mut self, other: &{{ struct.name }}Ref) {
         {% for field in struct.fields %}
         {% set name = field.name | escape_rust_keywords %}
-        self.set_{{ name }}(other.{{ name }});
+        self.set_{{ name }}(other.{{ name }}());
         {% endfor %}
     }
 
@@ -132,6 +132,6 @@ impl<'a> std::fmt::Debug for {{ struct.name }}Mut<'a> {
     }
 }
 
-impl<'a> crate::RefMut for {{ struct.name }}Mut<'a> {}
+impl<'a> flatdata::RefMut for {{ struct.name }}Mut<'a> {}
 
 {%- endmacro %}
