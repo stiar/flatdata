@@ -1,0 +1,21 @@
+namespace test {
+    struct A {
+        x : u32 : 16;
+        y : u32 : 16;
+    }
+
+    struct B {
+        value: u32 : 16;
+    }
+
+    struct R {
+        @range(x)
+        first_x : u32 : 16;
+    }
+
+    archive X {
+        data : vector< A >;
+
+        heterogeneous_data : multivector< 32, A, B >;
+    }
+}

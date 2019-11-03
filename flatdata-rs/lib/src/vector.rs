@@ -22,6 +22,7 @@ use std::{borrow::BorrowMut, fmt, io, marker};
 /// [`as_view`] and the corresponding setter to write a `Vector` to storage.
 ///
 /// # Examples
+///
 /// ``` flatdata
 /// struct A {
 ///     x : u32 : 16;
@@ -33,27 +34,17 @@ use std::{borrow::BorrowMut, fmt, io, marker};
 /// }
 /// ```
 ///
-/// ```
-/// # #[macro_use] extern crate flatdata;
+/// ```rust
 /// # fn main() {
-/// # use flatdata::{ MemoryResourceStorage, Archive, ArchiveBuilder, Vector };
-/// #
-/// # define_struct!(
-/// #     A,
-/// #     RefA,
-/// #     RefMutA,
-/// #     "Schema of A",
-/// #     4,
-/// #     (x, set_x, u32, u32, 0, 16),
-/// #     (y, set_y, u32, u32, 16, 16));
-/// #
-/// # define_archive!(X, XBuilder, "Schema of X";
-/// #     vector(data, false, "Schema of data", set_data, start_data, A),
-/// # );
+/// # use flatdata::{
+/// #    MemoryResourceStorage, Archive, ArchiveBuilder, Vector,
+/// #    test_archive::{A, XBuilder, X},
+/// # };
 /// #
 /// let storage = MemoryResourceStorage::new("/root/extvec");
 /// let builder = XBuilder::new(storage.clone()).expect("failed to create builder");
 /// let mut v: Vector<A> = Vector::new();
+/// # builder.start_heterogeneous_data().unwrap().close().unwrap();
 /// let mut a = v.grow();
 /// a.set_x(1);
 /// a.set_y(2);
@@ -240,49 +231,37 @@ where
 /// }
 /// ```
 ///
-/// ```
-/// # #[macro_use] extern crate flatdata;
+/// ```rust
 /// # fn main() {
-/// # use flatdata::{ MemoryResourceStorage, Archive, ArchiveBuilder };
-/// #
-/// # define_struct!(
-/// #     A,
-/// #     RefA,
-/// #     RefMutA,
-/// #     "Schema of A",
-/// #     4,
-/// #     (x, set_x, u32, u32, 0, 16),
-/// #     (y, set_y, u32, u32, 16, 16));
-/// #
-/// # define_archive!(X, XBuilder, "Schema of X";
-/// #     vector(data, false, "Schema of data", set_data, start_data, A),
-/// # );
+/// # use flatdata::{
+/// #     MemoryResourceStorage, Archive, ArchiveBuilder,
+/// #     test_archive::{A, X, XBuilder},
+/// # };
 /// #
 /// let storage = MemoryResourceStorage::new("/root/extvec");
 /// let builder = XBuilder::new(storage.clone()).expect("failed to create builder");
-/// {
-///     let mut v = builder.start_data().expect("failed to start");
-///     let mut a = v.grow().expect("grow failed");
-///     a.set_x(0);
-///     a.set_y(1);
+/// # builder.start_heterogeneous_data().unwrap().close().unwrap();
 ///
-///     let mut a = v.grow().expect("grow failed");
-///     a.set_x(2);
-///     a.set_y(3);
+/// let mut v = builder.start_data().expect("failed to start");
+/// let mut a = v.grow().expect("grow failed");
+/// a.set_x(0);
+/// a.set_y(1);
 ///
-///     let view = v.close().expect("close failed");
+/// let mut a = v.grow().expect("grow failed");
+/// a.set_x(2);
+/// a.set_y(3);
 ///
-///     // data can also be inspected directly after closing
-///     assert_eq!(view.len(), 2);
-///     assert_eq!(view.at(0).x(), 0);
-///     assert_eq!(view.at(0).y(), 1);
-/// }
+/// let view = v.close().expect("close failed");
+///
+/// // data can also be inspected directly after closing
+/// assert_eq!(view.len(), 2);
+/// assert_eq!(view.at(0).x(), 0);
+/// assert_eq!(view.at(0).y(), 1);
 ///
 /// let archive = X::open(storage).expect("failed to open");
 /// let view = archive.data();
 /// assert_eq!(view.at(1).x(), 2);
 /// assert_eq!(view.at(1).y(), 3);
-///
 /// # }
 /// ```
 ///
@@ -377,29 +356,8 @@ where
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    // Note: ExternalVector is tested in the corresponding example.
-
     use super::*;
-
-    define_struct!(
-        A,
-        RefA,
-        RefMutA,
-        "no_schema",
-        4,
-        (x, set_x, u32, u32, 0, 16),
-        (y, set_y, u32, u32, 16, 16)
-    );
-
-    define_struct!(
-        R,
-        RefR,
-        RefMutR,
-        "no_schema",
-        4,
-        (first_x, set_first_x, u32, u32, 0, 16),
-        range(x, u32, 0, 16)
-    );
+    use crate::test_archive::{A, R};
 
     #[test]
     fn test_vector_new() {

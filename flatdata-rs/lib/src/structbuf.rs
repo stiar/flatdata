@@ -16,7 +16,7 @@ use std::{fmt, marker};
 ///
 /// A struct buffer derefs (const and mut) to a reference of the underlying
 /// struct, therefore, struct getters and setters can be used directly on
-/// buffer.
+/// the buffer.
 ///
 /// # Examples
 /// ``` flatdata
@@ -30,23 +30,12 @@ use std::{fmt, marker};
 /// }
 /// ```
 ///
-/// ```
-/// # #[macro_use] extern crate flatdata;
+/// ```rust
 /// # fn main() {
-/// # use flatdata::{ MemoryResourceStorage, Archive, ArchiveBuilder, StructBuf };
-/// #
-/// # define_struct!(
-/// #     A,
-/// #     RefA,
-/// #     RefMutA,
-/// #     "schema of A",
-/// #     4,
-/// #     (x, set_x, u32, u32, 0, 16),
-/// #     (y, set_y, u32, u32, 16, 16));
-/// #
-/// # define_archive!(X, XBuilder, "schema of X";
-/// #     struct(data, false, "schema of data", set_data, A),
-/// # );
+/// # use flatdata::{
+/// #     MemoryResourceStorage, Archive, ArchiveBuilder, StructBuf,
+/// #     test_archive::{ A, X, XBuilder }
+/// # };
 /// #
 /// let storage = MemoryResourceStorage::new("/root/structbuf");
 /// let builder = XBuilder::new(storage.clone()).expect("failed to create builder");
@@ -54,6 +43,7 @@ use std::{fmt, marker};
 /// a.get_mut().set_x(1);
 /// a.get_mut().set_y(2);
 /// builder.set_data(a.get());
+/// # builder.start_heterogeneous_data().unwrap().close().unwrap();
 ///
 /// println!("{:?}", storage);
 /// let archive = X::open(storage).expect("failed to open");
@@ -133,19 +123,9 @@ where
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod test {
     use super::*;
-
-    define_struct!(
-        A,
-        RefA,
-        RefMutA,
-        "no_schema",
-        4,
-        (x, set_x, u32, u32, 0, 16),
-        (y, set_y, u32, u32, 16, 16)
-    );
+    use crate::test_archive::test::A;
 
     #[test]
     fn test_new() {

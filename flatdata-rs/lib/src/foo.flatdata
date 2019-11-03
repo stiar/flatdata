@@ -1,0 +1,18 @@
+// schema used in unittests
+
+namespace n {
+
+struct A {
+    x : u32 : 16;
+    y : u32 : 16;
+}
+
+struct R {
+    @range(x)
+    first_x : u32 : 16;
+}
+
+archive X {
+    data : vector< A >;
+}
+}

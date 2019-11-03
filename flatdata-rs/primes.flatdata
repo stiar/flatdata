@@ -1,0 +1,21 @@
+namespace prime {
+
+struct Number
+{
+    first_factor_ref : u32 : 32;
+}
+
+struct Factor
+{
+    value : u32 : 32;
+    count : u32 : 8;
+}
+
+archive Archive
+{
+    @explicit_reference( Number.first_factor_ref, Archive.factors )
+    numbers : vector< Number >;
+    factors : vector< Factor >;
+}
+
+}

@@ -1,30 +1,44 @@
-//! This module contains traits and macros that are used by generated code to
-//! define flatdata's structs, archives and resources.
+//! This module contains traits that are used by the generated code to
+//! define flatdata's structs.
 //!
 //! flatdata's code generator translates a flatdata schema to Rust code. The
 //! generated code contains all schema definitions embedded as strings, and for
-//! each schema element it uses one of the macros `define_struct`,
-//! `define_index`, `define_variadic_struct`, and `define_archive` to define
-//! the corresponding Rust struct and implement all needed methods and traits.
+//! each schema struct it defines 3 Rust structs: a factory with the same name
+//! as the archive struct, a reference struct for reading with suffix `Ref` and
+//! a mutable reference struct for writing with suffix `Mut`. The factory
+//! is used to bind the lifetime to the references as late as possible. It
+//! implement the `Struct` trait.
 //!
-//! ## Structs
+//! ## Example
 //!
-//! A flatdata struct, let's say `SomeData`, is introduced by macro
-//! `define_struct` which defines three Rust struct types: `SomeData` and
-//! `RefSomeData` and `RefMutSomeData`. The former type is used to to create the
-//! latter two. `RefSomeData` is used to read data from a serialized
-//! archive, `RefMutSomeData` to write data to archive.
+//! A flatdata struct
+//!
+//! ```
+//! struct A {
+//!     x : u32 : 16;
+//!     y : u32 : 16;
+//! }
+//! ```
+//!
+//! yields a factor `A` which is an empty struct. It implements `Struct` by
+//! providing the schema, size in bytes which is 32 here, and refers to the
+//! reference type `ARef` and `AMut`. The latter structs are pointers to
+//! the location where the data is stored. The data is accessed for reading
+//! and writing by using getters.
+//!
+//! All containers are parameterized by factory structs, i.e. in this example
+//! an read-only array of `A` is represented as `ArrayView<A>`. When indexing
+//! an element in it, it returns a reference of type `ARef` with lifetime
+//! bound to it. Similarly, `Vector<A>` is an array for writing `A`'s.
 //!
 //! ## Indexes and variadic types
 //!
 //! A `MultiVector` is a heterogeneous container which consists of indexed
 //! items, each containing several elements of different types (cf.
-//! `MultiVector`). Macros `define_index` and `define_variadic_struct` are used
-//! to introduce types used with `MultiVector`. `define_index` introduces a
-//! struct with a single field `value` used as an index for items.
-//! `define_variadic_struct` bounds multiple structs as into a single enum
-//! type, which is used for reading. For writing, the macro defines a builder
-//! type which has corresponding methods to add each struct to the item.
+//! `MultiVector`). The generator generates two further types for each
+//! multivector: an index type with a single field which is used for
+//! index the data, and a variadic type which unifies the heterogeneous
+//! types in the multivector.
 
 use std::fmt::Debug;
 
@@ -150,329 +164,12 @@ pub trait VariadicStruct<'a>: Clone {
 pub trait VariadicRefFactory: for<'a> VariadicStruct<'a> {}
 impl<T> VariadicRefFactory for T where T: for<'a> VariadicStruct<'a> {}
 
-//
-// Generator macros
-//
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! has_overlap_due_to_ranges {
-    ($($range:ident),+) => {
-        true
-    };
-    () => {
-        false
-    };
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! implement_no_overlap {
-    ($name:ident, $($range:ident),+) => {};
-    ($name:ident,) => {
-        impl $crate::NoOverlap for $name {}
-    };
-}
-
-/// Macro used by generator to define a flatdata struct.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! define_struct {
-    // prelude of internal helpers (see https://danielkeep.github.io/tlborm/book/pat-internal-rules.html)
-
-    // has overlap from ranges
-    (@has_overlap, $($range:ident),+) => {
-        true
-    };
-    (@has_overlap,) => {
-        false
-    };
-
-    // implement NoOverlap
-    (@no_overlap, $name:ident, $($range:ident),+) => {};
-    (@no_overlap, $name:ident,) => {
-        impl $crate::NoOverlap for $name {}
-    };
-
-    // main entry point
-    ($factory:ident, $name:ident, $name_mut:ident, $schema:expr, $size_in_bytes:expr,
-        $(($field:ident, $field_setter:ident, $type:path, $primitive_type:tt, $offset:expr, $bit_size:expr)),*
-        $(,range($range:ident, $range_type:tt, $range_offset:expr, $range_bit_size:expr))*
-    ) =>
-    {
-        #[derive(Clone, Copy)]
-        pub struct $name<'a> {
-            data: *const u8,
-            _phantom: $crate::marker::PhantomData<&'a u8>,
-        }
-
-        #[derive(Clone, Debug)]
-        pub struct $factory{}
-
-        impl<'a> $crate::Struct<'a> for $factory
-        {
-            const SCHEMA: &'static str = $schema;
-            const SIZE_IN_BYTES: usize = $size_in_bytes;
-            const IS_OVERLAPPING_WITH_NEXT : bool = define_struct!(@has_overlap, $($range),*);
-
-            type Item = $name<'a>;
-
-            #[inline]
-            fn create(data : &'a[u8]) -> Self::Item
-            {
-                Self::Item{ data : data.as_ptr(), _phantom : $crate::marker::PhantomData }
-            }
-
-            type ItemMut = $name_mut<'a>;
-
-            #[inline]
-            fn create_mut(data: &'a mut[u8]) -> Self::ItemMut
-            {
-                Self::ItemMut{ data : data.as_mut_ptr(), _phantom : $crate::marker::PhantomData }
-            }
-        }
-
-        define_struct!(@no_overlap, $factory, $($range),*);
-
-        impl<'a> $name<'a> {
-            $(#[inline]
-                pub fn $field(&self) -> $type {
-                let value = flatdata_read_bytes!($primitive_type, self.data, $offset, $bit_size);
-                unsafe { ::std::mem::transmute::<$primitive_type, $type>(value) }
-            })*
-
-            $(#[inline]
-                pub fn $range(&self) -> std::ops::Range<$range_type> {
-                flatdata_read_bytes!($range_type, self.data, $range_offset, $range_bit_size)..
-                flatdata_read_bytes!($range_type, self.data, $range_offset + $size_in_bytes * 8, $range_bit_size)
-            })*
-
-            #[inline]
-            pub fn as_ptr(&self) -> *const u8 {
-                self.data
-            }
-        }
-
-        impl<'a> ::std::fmt::Debug for $name<'a> {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                write!(f,
-                    concat!(stringify!($factory), " {{ ",
-                        flatdata_intersperse!($(concat!( stringify!($field), ": {:?}")),*), " }}"),
-                    $(self.$field(),)*)
-            }
-        }
-
-        impl<'a> ::std::cmp::PartialEq for $name<'a> {
-            #[inline]
-            fn eq(&self, other: &$name) -> bool {
-                $(self.$field() == other.$field()) && *
-            }
-        }
-
-        impl<'a> $crate::Ref for $name<'a> {}
-
-        pub struct $name_mut<'a> {
-            data: *mut u8,
-            _phantom: $crate::marker::PhantomData<&'a u8>,
-        }
-
-        impl<'a> $name_mut<'a> {
-            $(#[inline]
-                pub fn $field(&self) -> $type {
-                let value = flatdata_read_bytes!($primitive_type, self.data, $offset, $bit_size);
-                unsafe { ::std::mem::transmute::<$primitive_type, $type>(value) }
-            })*
-
-            $(#[inline]
-                pub fn $field_setter(&mut self, value: $type) {
-                let buffer = unsafe {
-                    ::std::slice::from_raw_parts_mut(self.data, $size_in_bytes)
-                };
-                flatdata_write_bytes!($primitive_type; value, buffer, $offset, $bit_size)
-            })*
-
-            #[inline]
-            pub fn fill_from(&mut self, other: &$name) {
-                $(self.$field_setter(other.$field());)*
-            }
-
-            #[inline]
-            pub fn as_ptr(&self) -> *const u8 {
-                self.data
-            }
-
-            #[inline]
-            pub fn as_mut_ptr(&self) -> *mut u8 {
-                self.data
-            }
-        }
-
-        impl<'a> ::std::fmt::Debug for $name_mut<'a> {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                $name{ data : self.data, _phantom : $crate::marker::PhantomData }.fmt( f )
-            }
-        }
-
-        impl<'a> $crate::RefMut for $name_mut<'a> {}
-    };
-}
-
-/// Macro used by generator to define a flatdata index.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! define_index {
-    ($factory:ident,$name:ident, $name_mut:ident, $schema:expr, $size_in_bytes:expr, $size_in_bits:expr) => {
-        // TODO: Find a way to put this definition into an internal submodule.
-        define_struct!(
-            $factory,
-            $name,
-            $name_mut,
-            $schema,
-            $size_in_bytes,
-            (value, set_value, u64, u64, 0, $size_in_bits),
-            range(range, u64, 0, $size_in_bits)
-        );
-
-        impl<'a> $crate::IndexStruct<'a> for $factory {
-            #[inline]
-            fn range(data: Self::Item) -> std::ops::Range<usize> {
-                let range = data.range();
-                range.start as usize..range.end as usize
-            }
-
-            #[inline]
-            fn set_index(mut data: Self::ItemMut, value: usize) {
-                data.set_value(value as u64);
-            }
-        }
-    };
-}
-
-/// Macro used by generator to define a flatdata variant used in `MultiVector`
-/// and `MultiArrayView`.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! define_variadic_struct {
-    ($factory:ident, $name:ident, $item_builder_name:ident, $index_type:path,
-        $($type_index:expr => ($type_name:ident, $inner_type:path, $add_type_fn:ident)),+) =>
-    {
-        #[derive(Clone, PartialEq)]
-        pub enum $name<'a> {
-            $($type_name(<$inner_type as $crate::Struct<'a>>::Item),)*
-        }
-
-        impl<'a> ::std::fmt::Debug for $name<'a> {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                match *self {
-                    $($name::$type_name(ref inner) => write!(f, "{:?}", inner)),+
-                }
-            }
-        }
-
-        impl<'a> $crate::VariadicRef for $name<'a> {
-            #[inline]
-            fn size_in_bytes(&self) -> usize {
-                match *self {
-                    $($name::$type_name(_) => <$inner_type as $crate::Struct<'a>>::SIZE_IN_BYTES),+
-                }
-            }
-        }
-
-        pub struct $item_builder_name<'a> {
-            data: &'a mut Vec<u8>
-        }
-
-        impl<'a> $item_builder_name<'a> {
-            #[inline]
-            $(#[inline]
-                pub fn $add_type_fn<'b>(&'b mut self) -> <$inner_type as $crate::Struct<'b>>::ItemMut {
-                let old_len = self.data.len();
-                let increment = 1 + <$inner_type as $crate::Struct<'b>>::SIZE_IN_BYTES;
-                self.data.resize(old_len + increment, 0);
-                self.data[old_len - $crate::PADDING_SIZE] = $type_index;
-                <$inner_type as $crate::Struct<'b>>::create_mut(
-                    &mut self.data[1 + old_len - $crate::PADDING_SIZE..]
-                )
-            })*
-        }
-
-        #[derive(Clone)]
-        pub struct $factory{}
-
-        impl<'a> $crate::VariadicStruct<'a> for $factory {
-            type Index = $index_type;
-
-            type Item = $name<'a>;
-
-            #[inline]
-            fn create(index : $crate::TypeIndex, data : &'a [u8]) -> Self::Item
-            {
-                match index {
-                    $($type_index => $name::$type_name(<$inner_type as $crate::Struct<'a>>::create(data))),+,
-                    _ => panic!(concat!(
-                        "invalid type index {} for type ", stringify!($name)), index),
-                }
-            }
-
-            type ItemMut = $item_builder_name<'a>;
-
-            #[inline]
-            fn create_mut(data : &'a mut Vec<u8>) -> Self::ItemMut
-            {
-                $item_builder_name{data}
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::{
         super::{helper::Int, structbuf::StructBuf},
         *,
     };
-
-    #[test]
-    #[allow(dead_code)]
-    fn test_debug() {
-        #[derive(Debug, PartialEq, Eq)]
-        #[repr(u32)]
-        pub enum MyEnum {
-            Value,
-        }
-        define_struct!(
-            A,
-            RefA,
-            RefMutA,
-            "no_schema",
-            4,
-            (x, set_x, u32, u32, 0, 16),
-            (y, set_y, u32, u32, 16, 16),
-            (e, set_e, MyEnum, u32, 32, 16)
-        );
-        assert_eq!(<A as Struct>::IS_OVERLAPPING_WITH_NEXT, false);
-        let a = StructBuf::<A>::new();
-        let output = format!("{:?}", a);
-        assert_eq!(output, "StructBuf { resource: A { x: 0, y: 0, e: Value } }");
-    }
-
-    #[test]
-    #[allow(dead_code)]
-    fn range() {
-        // check that this compiles
-        define_struct!(
-            A,
-            RefA,
-            RefMutA,
-            "no_schema",
-            4,
-            (first_x, set_first_x, u32, u32, 0, 16),
-            (y, set_y, u32, u32, 16, 16),
-            range(x, u32, 0, 16)
-        );
-
-        assert_eq!(<A as Struct>::IS_OVERLAPPING_WITH_NEXT, true);
-    }
 
     macro_rules! define_enum_test {
         ($test_name:ident, $type:tt, $is_signed:expr, $val1:expr, $val2:expr) => {
@@ -490,14 +187,128 @@ mod test {
                     const IS_SIGNED: bool = $is_signed;
                 }
 
-                define_struct!(
-                    A,
-                    RefA,
-                    RefMutA,
-                    "no_schema",
-                    1,
-                    (x, set_x, Variant, $type, 0, 2)
-                );
+
+                #[derive(Clone, Debug)]
+                pub struct A {}
+
+                #[derive(Clone, Copy)]
+                pub struct ARef<'a> {
+                    data: *const u8,
+                    _phantom: std::marker::PhantomData<&'a u8>,
+                }
+
+                impl<'a> Struct<'a> for A {
+                    const SCHEMA: &'static str = "";
+                    const SIZE_IN_BYTES: usize = 1;
+                    const IS_OVERLAPPING_WITH_NEXT: bool = false;
+
+                    type Item = ARef<'a>;
+
+                    #[inline]
+                    fn create(data: &'a [u8]) -> Self::Item {
+                        Self::Item {
+                            data: data.as_ptr(),
+                            _phantom: std::marker::PhantomData,
+                        }
+                    }
+
+                    type ItemMut = AMut<'a>;
+
+                    #[inline]
+                    fn create_mut(data: &'a mut [u8]) -> Self::ItemMut {
+                        Self::ItemMut {
+                            data: data.as_mut_ptr(),
+                            _phantom: std::marker::PhantomData,
+                        }
+                    }
+                }
+
+                impl NoOverlap for A {}
+
+                impl<'a> ARef<'a> {
+                    #[inline]
+                    pub fn x(&self) -> Variant {
+                        let value = flatdata_read_bytes!($type, self.data, 0, 2);
+                        unsafe { std::mem::transmute::<$type, Variant>(value) }
+                    }
+
+                    #[inline]
+                    pub fn as_ptr(&self) -> *const u8 {
+                        self.data
+                    }
+                }
+
+                impl<'a> std::fmt::Debug for ARef<'a> {
+                    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        f.debug_struct("A").field("x", &self.x()).finish()
+                    }
+                }
+
+                impl<'a> std::cmp::PartialEq for ARef<'a> {
+                    #[inline]
+                    fn eq(&self, other: &Self) -> bool {
+                        self.x() == other.x()
+                    }
+                }
+
+                impl<'a> Ref for ARef<'a> {}
+
+                pub struct AMut<'a> {
+                    data: *mut u8,
+                    _phantom: std::marker::PhantomData<&'a u8>,
+                }
+
+                impl<'a> AMut<'a> {
+                    #[inline]
+                    pub fn x(&self) -> Variant {
+                        let value = flatdata_read_bytes!($type, self.data, 0, 8);
+                        unsafe { std::mem::transmute::<$type, Variant>(value) }
+                    }
+
+                    #[inline]
+                    pub fn set_x(&mut self, value: Variant) {
+                        let buffer = unsafe { std::slice::from_raw_parts_mut(self.data, 1) };
+                        flatdata_write_bytes!(u8; value, buffer, 0, 8)
+                    }
+
+                    #[inline]
+                    pub fn fill_from(&mut self, other: &ARef) {
+                        self.set_x(other.x());
+                    }
+
+                    #[inline]
+                    pub fn as_ptr(&self) -> *const u8 {
+                        self.data
+                    }
+
+                    #[inline]
+                    pub fn as_mut_ptr(&self) -> *mut u8 {
+                        self.data
+                    }
+                }
+
+                impl<'a> std::fmt::Debug for AMut<'a> {
+                    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        ARef {
+                            data: self.data,
+                            _phantom: std::marker::PhantomData,
+                        }
+                        .fmt(f)
+                    }
+                }
+
+                impl<'a> RefMut for AMut<'a> {}
+
+
+                // define_struct!(
+                //     A,
+                //     RefA,
+                //     RefMutA,
+                //     "no_schema",
+                //     1,
+                //     (x, set_x, Variant, $type, 0, 2)
+                // );
+
                 let mut a = StructBuf::<A>::new();
                 let output = format!("{:?}", a);
                 assert_eq!(output, "StructBuf { resource: A { x: X } }");

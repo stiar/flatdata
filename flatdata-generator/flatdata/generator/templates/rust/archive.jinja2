@@ -16,7 +16,7 @@
 #[derive(Clone)]
 pub struct {{archive.name}} {
     _storage: ::std::rc::Rc<dyn flatdata::ResourceStorage>,
-    {% for r in archive.resources %}
+    {% for r in archive.resources | supported_resources %}
     {{r.name}}: {% if r.optional %}Option<{% endif %}{% if [r] | instance_resources or [r] | vector_resources or [r] | rawdata_resources %}flatdata::MemoryDescriptor{% elif [r] | multivector_resources %}(flatdata::MemoryDescriptor, flatdata::MemoryDescriptor){% elif [r] | subarchive_resources %}{{ fully_qualified_name(archive, r.target.node) }}{% endif %}{% if r.optional %}>{% endif %},
     {% endfor %}
 }
@@ -126,7 +126,7 @@ impl {{archive.name}} {
 impl ::std::fmt::Debug for {{archive.name}} {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         f.debug_struct("{{archive.name}}")
-            {% for r in archive.resources %}
+            {% for r in archive.resources | supported_resources %}
             .field("{{r.name}}", &self.{{r.name}}())
             {% endfor %}
             .finish()
@@ -167,7 +167,7 @@ impl flatdata::Archive for {{archive.name}} {
 
         Ok(Self {
             _storage: storage,
-            {% for r in archive.resources %}
+            {% for r in archive.resources | supported_resources %}
             {{r.name}},
             {% endfor %}
         })

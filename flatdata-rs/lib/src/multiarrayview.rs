@@ -251,49 +251,54 @@ where
 #[allow(dead_code)]
 mod tests {
     use super::*;
-    use crate::{memstorage::MemoryResourceStorage, storage::create_multi_vector};
+    use crate::{
+        memstorage::MemoryResourceStorage,
+        storage::create_multi_vector,
+        test_archive::test::{HeterogeneousData, HeterogeneousDataRef},
+    };
 
-    define_index!(Idx, RefIdx, RefMutIdx, "some_idx_schema", 4, 32);
+    // define_index!(Idx, RefIdx, RefMutIdx, "some_idx_schema", 4, 32);
 
-    define_struct!(
-        Value,
-        RefValue,
-        RefMutValue,
-        "no_schema",
-        3,
-        (value, set_value, u32, u32, 0, 24)
-    );
+    // define_struct!(
+    //     Value,
+    //     RefValue,
+    //     RefMutValue,
+    //     "no_schema",
+    //     3,
+    //     (value, set_value, u32, u32, 0, 24)
+    // );
 
-    define_struct!(
-        Point,
-        RefPoint,
-        RefMutPoint,
-        "no_schema",
-        4,
-        (x, set_x, u32, u32, 0, 24),
-        (y, set_y, u32, u32, 0, 24)
-    );
+    // define_struct!(
+    //     Point,
+    //     RefPoint,
+    //     RefMutPoint,
+    //     "no_schema",
+    //     4,
+    //     (x, set_x, u32, u32, 0, 24),
+    //     (y, set_y, u32, u32, 0, 24)
+    // );
 
-    define_variadic_struct!(Variant, RefVariant, BuilderVariant, Idx,
-        0 => (Value, Value, add_value),
-        1 => (Point, Point, add_point) );
+    // define_variadic_struct!(Variant, RefVariant, BuilderVariant, Idx,
+    //     0 => (Value, Value, add_value),
+    //     1 => (Point, Point, add_point) );
 
     fn create_view<'a>(
         storage: &'a MemoryResourceStorage,
         size: usize,
-    ) -> MultiArrayView<'a, Variant> {
-        let mut mv = create_multi_vector::<Variant>(&*storage, "multivector", "Some schema")
-            .expect("failed to create MultiVector");
+    ) -> MultiArrayView<'a, HeterogeneousData> {
+        let mut mv =
+            create_multi_vector::<HeterogeneousData>(&*storage, "multivector", "Some schema")
+                .expect("failed to create MultiVector");
 
         for i in 0..size {
             let mut item = mv.grow().expect("grow failed");
 
-            let mut a = item.add_value();
-            a.set_value(i as u32);
+            let mut b = item.add_b();
+            b.set_value(i as u32);
 
-            let mut b = item.add_point();
-            b.set_x((i + size) as u32);
-            b.set_y((i + 2 * size) as u32);
+            let mut a = item.add_a();
+            a.set_x((i + size) as u32);
+            a.set_y((i + 2 * size) as u32);
         }
 
         mv.close().expect("close failed")
@@ -305,7 +310,7 @@ mod tests {
         let view = create_view(&storage, 10);
 
         let value = |mut iter: MultiArrayViewItemIter<_>| match iter.next().unwrap() {
-            RefVariant::Value(v) => v.value(),
+            HeterogeneousDataRef::B(v) => v.value(),
             otherwise => panic!("unexpected value: {:?}", otherwise),
         };
 
@@ -324,7 +329,7 @@ mod tests {
         let view = create_view(&storage, 10);
 
         let value = |mut iter: MultiArrayViewItemIter<_>| match iter.next().unwrap() {
-            RefVariant::Value(v) => v.value(),
+            HeterogeneousDataRef::B(v) => v.value(),
             otherwise => panic!("unexpected value: {:?}", otherwise),
         };
 
@@ -337,16 +342,16 @@ mod tests {
         let storage = MemoryResourceStorage::new("/root/resources");
         let view = create_view(&storage, 100);
         let content = " { len: 100, data: [\
-                       (0, [Value { value: 0 }, Point { x: 200, y: 200 }]), \
-                       (1, [Value { value: 1 }, Point { x: 201, y: 201 }]), \
-                       (2, [Value { value: 2 }, Point { x: 202, y: 202 }]), \
-                       (3, [Value { value: 3 }, Point { x: 203, y: 203 }]), \
-                       (4, [Value { value: 4 }, Point { x: 204, y: 204 }]), \
-                       (5, [Value { value: 5 }, Point { x: 205, y: 205 }]), \
-                       (6, [Value { value: 6 }, Point { x: 206, y: 206 }]), \
-                       (7, [Value { value: 7 }, Point { x: 207, y: 207 }]), \
-                       (8, [Value { value: 8 }, Point { x: 208, y: 208 }]), \
-                       (9, [Value { value: 9 }, Point { x: 209, y: 209 }])]... }";
+                       (0, [B { value: 0 }, A { x: 100, y: 200 }]), \
+                       (1, [B { value: 1 }, A { x: 101, y: 201 }]), \
+                       (2, [B { value: 2 }, A { x: 102, y: 202 }]), \
+                       (3, [B { value: 3 }, A { x: 103, y: 203 }]), \
+                       (4, [B { value: 4 }, A { x: 104, y: 204 }]), \
+                       (5, [B { value: 5 }, A { x: 105, y: 205 }]), \
+                       (6, [B { value: 6 }, A { x: 106, y: 206 }]), \
+                       (7, [B { value: 7 }, A { x: 107, y: 207 }]), \
+                       (8, [B { value: 8 }, A { x: 108, y: 208 }]), \
+                       (9, [B { value: 9 }, A { x: 109, y: 209 }])]... }";
 
         assert_eq!(
             format!("{:?}", view),
@@ -358,7 +363,7 @@ mod tests {
         );
         assert_eq!(
             format!("{:?}", view.at(5)),
-            "MultiArrayViewItemIter { data: [Value { value: 5 }, Point { x: 205, y: 205 }] }"
+            "MultiArrayViewItemIter { data: [B { value: 5 }, A { x: 105, y: 205 }] }"
         );
         let mut iter = view.iter();
         for _ in 0..99 {
@@ -367,7 +372,7 @@ mod tests {
         assert_eq!(
             format!("{:?}", iter),
             "MultiArrayViewIter { len: 1, data: \
-             [(0, [Value { value: 99 }, Point { x: 299, y: 299 }])] }"
+             [(0, [B { value: 99 }, A { x: 199, y: 299 }])] }"
         );
     }
 
